@@ -1,0 +1,28 @@
+# OS / Editor
+.DS_Store
+.idea/
+.vscode/
+
+# Env files
+.env
+.env.*
+
+# Go build artifacts
+bin/
+build/
+dist/
+*.out
+*.test
+coverage*
+*.coverprofile
+
+# Lambda build outputs
+bootstrap
+*.zip
+
+# Temporary files
+/tmp/
+**/tmp/
+
+# Dependencies
+vendor/

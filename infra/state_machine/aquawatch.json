@@ -1,0 +1,104 @@
+{
+  "Comment": "AquaWatch pipeline: preprocess -> train -> infer",
+  "StartAt": "Preprocess",
+  "States": {
+    "Preprocess": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:REAL_AWS_REGION:REAL_ACCOUNT_ID:function:aquawatch-preprocess",
+        "Payload": {
+          "station.$": "$.station",
+          "parameter.$": "$.parameter",
+          "bucket.$": "$.bucket",
+          "processedKey.$": "$.processedKey"
+        }
+      },
+      "ResultPath": null,
+      "Next": "ShouldTrain"
+    },
+    "ShouldTrain": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.train",
+          "BooleanEquals": true,
+          "Next": "Train"
+        }
+      ],
+      "Default": "UseExistingModel"
+    },
+    "UseExistingModel": {
+      "Type": "Pass",
+      "Parameters": {
+        "ModelArtifacts": {
+          "S3ModelArtifacts.$": "States.Format('s3://{}/model/aquawatch-train-default/output/model.tar.gz', $.bucket)"
+        }
+      },
+      "ResultPath": "$.trainResult",
+      "Next": "Infer"
+    },
+    "Train": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sagemaker:createTrainingJob.sync",
+      "Parameters": {
+        "TrainingJobName.$": "States.Format('aquawatch-train-{}', States.UUID())",
+        "AlgorithmSpecification": {
+          "TrainingImage": "246618743249.dkr.ecr.REAL_AWS_REGION.amazonaws.com/sagemaker-xgboost:1.7-1",
+          "TrainingInputMode": "File"
+        },
+        "InputDataConfig": [
+          {
+            "ChannelName": "train",
+            "ContentType": "text/csv",
+            "DataSource": {
+              "S3DataSource": {
+                "S3DataType": "S3Prefix",
+                "S3Uri.$": "States.Format('s3://{}/{}', $.bucket, $.processedKey)",
+                "S3DataDistributionType": "FullyReplicated"
+              }
+            }
+          }
+        ],
+        "OutputDataConfig": {
+          "S3OutputPath.$": "States.Format('s3://{}/model', $.bucket)"
+        },
+        "StoppingCondition": {
+          "MaxRuntimeInSeconds": 3600
+        },
+        "ResourceConfig": {
+          "InstanceType": "ml.c4.xlarge",
+          "InstanceCount": 1,
+          "VolumeSizeInGB": 10
+        },
+        "RoleArn": "arn:aws:iam::REAL_ACCOUNT_ID:role/aquawatch-sagemaker-exec-role",
+        "HyperParameters": {
+          "objective": "reg:linear",
+          "num_round": "50",
+          "max_depth": "5",
+          "eta": "0.2",
+          "subsample": "0.8",
+          "eval_metric": "rmse"
+        }
+      },
+      "ResultPath": "$.trainResult",
+      "Next": "Infer"
+    },
+    "Infer": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:REAL_AWS_REGION:REAL_ACCOUNT_ID:function:aquawatch-infer",
+        "Payload": {
+          "bucket.$": "$.bucket",
+          "processed_key.$": "$.processedKey",
+          "s3_model_artifacts.$": "$.trainResult.ModelArtifacts.S3ModelArtifacts"
+        }
+      },
+      "ResultPath": null,
+      "End": true
+    }
+  }
+}
+
+
