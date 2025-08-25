@@ -47,6 +47,9 @@ GOARCH="amd64"; [[ "$ARCH" == "arm64" ]] && GOARCH="arm64"
 PREPROCESS_FN="${PREPROCESS_FN:-aquawatch-preprocess}"
 INFER_FN="${INFER_FN:-aquawatch-infer}"
 
+# SNS topic name for alerts
+SNS_TOPIC_NAME="${SNS_TOPIC_NAME:-aquawatch-alerts}"
+
 # -------------------- Bootstrap --------------------
 
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
@@ -184,6 +187,38 @@ upsert_state_machine() {
   fi
 }
 
+# -------------------- DynamoDB --------------------
+
+ensure_prediction_tracker_table() {
+  local table="prediction-tracker"
+  if aws dynamodb describe-table --table-name "$table" >/dev/null 2>&1; then
+    echo "DynamoDB table $table already exists."
+  else
+    echo "Creating DynamoDB table $table ..."
+    aws dynamodb create-table \
+      --table-name "$table" \
+      --attribute-definitions \
+        AttributeName=site,AttributeType=S \
+        AttributeName=status,AttributeType=S \
+      --key-schema \
+        AttributeName=site,KeyType=HASH \
+        AttributeName=status,KeyType=RANGE \
+      --billing-mode PAY_PER_REQUEST >/dev/null
+    echo "Waiting for DynamoDB table to be active ..."
+    aws dynamodb wait table-exists --table-name "$table"
+  fi
+}
+
+# -------------------- SNS --------------------
+
+ensure_sns_topic() {
+  local name="$SNS_TOPIC_NAME"
+  echo "Ensuring SNS topic '$name' exists ..."
+  local arn
+  arn=$(aws sns create-topic --name "$name" --query 'TopicArn' --output text)
+  echo "$arn"
+}
+
 # -------------------- Main --------------------
 
 main() {
@@ -209,6 +244,14 @@ main() {
 
   # Create or update Step Functions state machine
   upsert_state_machine
+
+  # Ensure DynamoDB table exists
+  ensure_prediction_tracker_table
+
+  # Ensure SNS topic exists and report ARN
+  local SNS_TOPIC_ARN
+  SNS_TOPIC_ARN="$(ensure_sns_topic)"
+  echo "SNS topic: $SNS_TOPIC_NAME ($SNS_TOPIC_ARN)"
 
   echo "Deployment complete. Functions: $PREPROCESS_FN, $INFER_FN. State Machine: $STATE_MACHINE_NAME"
 }

@@ -42,6 +42,8 @@ github.com/aws/aws-sdk-go-v2/service/sagemakerruntime v1.36.2 h1:LbTx3QzrPsohSYX
 github.com/aws/aws-sdk-go-v2/service/sagemakerruntime v1.36.2/go.mod h1:DdPouOUVsSjZqoTWL5sJL/6W8lVyRnpA6KVijcj0Hzs=
 github.com/aws/aws-sdk-go-v2/service/sfn v1.38.2 h1:Fx3su5YVfkkjdbXZl56T1KKLsdIxr+q28VFoUXDWsd4=
 github.com/aws/aws-sdk-go-v2/service/sfn v1.38.2/go.mod h1:q8f8cFyuSj7kxJSrj9TTt/SA8AiJwvZOm1zWPejr4QY=
+github.com/aws/aws-sdk-go-v2/service/sns v1.37.1 h1:rDo2bWVfwQww1nfxJF9E7u/A+NmiSnwDSWpU7+wP60Q=
+github.com/aws/aws-sdk-go-v2/service/sns v1.37.1/go.mod h1:O4eFpSa/AodvDLJqarL+0vnRgDP9d/FEKHZmzLnA/1c=
 github.com/aws/aws-sdk-go-v2/service/sso v1.28.2 h1:ve9dYBB8CfJGTFqcQ3ZLAAb/KXWgYlgu/2R2TZL2Ko0=
 github.com/aws/aws-sdk-go-v2/service/sso v1.28.2/go.mod h1:n9bTZFZcBa9hGGqVz3i/a6+NG0zmZgtkB9qVVFDqPA8=
 github.com/aws/aws-sdk-go-v2/service/ssooidc v1.33.2 h1:pd9G9HQaM6UZAZh19pYOkpKSQkyQQ9ftnl/LttQOcGI=
