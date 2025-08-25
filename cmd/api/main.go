@@ -30,6 +30,7 @@ func main() {
 	mux.HandleFunc("/ingest", handler.IngestHandler)
 	mux.HandleFunc("/prediction/status", handler.PredictionStatusHandler)
 	mux.HandleFunc("/alerts/subscribe", handler.SubscribeAlertsHandler)
+	mux.HandleFunc("/anomaly/check", handler.AnomalyCheckHandler)
 
 	addr := os.Getenv("PORT")
 	if addr == "" {

@@ -21,6 +21,31 @@ type ingestResponse struct {
 	ExecutionArn string `json:"execution_arn,omitempty"`
 }
 
+// anomalyRequest represents inputs from the frontend for the anomaly check.
+type anomalyRequest struct {
+	Sites     []string `json:"sites"`
+	MinLat    float64  `json:"min_lat"`
+	MinLng    float64  `json:"min_lng"`
+	MaxLat    float64  `json:"max_lat"`
+	MaxLng    float64  `json:"max_lng"`
+	Threshold float64  `json:"threshold_percent"`
+	Parameter string   `json:"parameter"`
+}
+
+type anomalyItem struct {
+	Site            string  `json:"site"`
+	S3Key           string  `json:"s3_key"`
+	ObservedValue   float64 `json:"observed_value"`
+	PredictedValue  float64 `json:"predicted_value"`
+	PercentChange   float64 `json:"percent_change"`
+	Anomalous       bool    `json:"anomalous"`
+	AnomalousReason string  `json:"anomalous_reason"`
+}
+
+type anomalyResponse struct {
+	Items []anomalyItem `json:"items"`
+}
+
 func writeJSON(w http.ResponseWriter, code int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
@@ -64,7 +89,7 @@ func IngestHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	processedKey := "processed/latest.csv"
+	processedKey := fmt.Sprintf("processed/%s/%d.csv", stationID, time.Now().UTC().Unix())
 
 	input := map[string]any{
 		"station":      stationID,
@@ -175,4 +200,66 @@ func SubscribeAlertsHandler(w http.ResponseWriter, r *http.Request) {
 		"message":          "subscription requested; check email to confirm",
 		"subscription_arn": arn,
 	})
+}
+
+// AnomalyCheckHandler accepts a site and bounding box and performs
+// fetch->preprocess->infer->anomaly detection using a configured threshold.
+// POST JSON body: {"site":"03339000","min_lat":..,"min_lng":..,"max_lat":..,"max_lng":..,"threshold_percent":10}
+func AnomalyCheckHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+
+	var req anomalyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
+		return
+	}
+	sites := req.Sites
+	if len(sites) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing sites"})
+		return
+	}
+	if len(sites) > 10 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "too many sites (max 10)"})
+		return
+	}
+	threshold := req.Threshold
+	if threshold <= 0 {
+		// default 10%
+		threshold = 10
+	}
+	parameter := req.Parameter
+	if parameter == "" {
+		parameter = "00060"
+	}
+
+	items := make([]anomalyItem, 0, len(sites))
+	for _, site := range sites {
+		site = strings.TrimSpace(site)
+		if site == "" {
+			continue
+		}
+		res, err := internal.ProcessInferAndDetect(r.Context(), site, parameter, threshold)
+		if err != nil {
+			log.Printf("anomaly flow failed for site %s: %v", site, err)
+			continue
+		}
+		var anomalousReason string
+		if res.Anomalous {
+			anomalousReason = "high discharge"
+		}
+		items = append(items, anomalyItem{
+			Site:            site,
+			S3Key:           res.S3Key,
+			ObservedValue:   res.ObservedValue,
+			PredictedValue:  res.PredictedValue,
+			PercentChange:   res.PercentChange,
+			Anomalous:       res.Anomalous,
+			AnomalousReason: anomalousReason,
+		})
+	}
+	writeJSON(w, http.StatusOK, anomalyResponse{Items: items})
 }
