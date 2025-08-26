@@ -425,6 +425,22 @@ func AnomalyCheckHandler(w http.ResponseWriter, r *http.Request) {
 			AnomalousReason: anomalousReason,
 		})
 	}
+
+	// Best-effort: publish one SNS alert covering all anomalous sites
+	{
+		var count int
+		var b strings.Builder
+		for _, it := range items {
+			if it.Anomalous {
+				count++
+				fmt.Fprintf(&b, "Site %s anomalous: observed=%.2f predicted=%.2f (%.1f%%)\n", it.Site, it.ObservedValue, it.PredictedValue, it.PercentChange)
+			}
+		}
+		if count > 0 {
+			subject := fmt.Sprintf("AquaWatch Anomalies Detected (%d)", count)
+			_ = internal.PublishAlert(r.Context(), subject, b.String())
+		}
+	}
 	writeJSON(w, http.StatusOK, anomalyResponse{Items: items})
 }
 

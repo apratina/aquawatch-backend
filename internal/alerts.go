@@ -64,3 +64,26 @@ func SubscribeAlertsEmail(ctx context.Context, email string) (string, error) {
 	}
 	return *subOut.SubscriptionArn, nil
 }
+
+// PublishAlert publishes a plain-text alert message to the SNS topic configured by SNS_TOPIC_NAME.
+// If the topic doesn't exist, it will be created. Subject is optional.
+func PublishAlert(ctx context.Context, subject, message string) error {
+	cfg := getAWSConfig()
+	client := sns.NewFromConfig(cfg)
+
+	topicName := os.Getenv("SNS_TOPIC_NAME")
+	if topicName == "" {
+		topicName = "aquawatch-alerts"
+	}
+
+	createOut, err := client.CreateTopic(ctx, &sns.CreateTopicInput{Name: aws.String(topicName)})
+	if err != nil {
+		return err
+	}
+	pubIn := &sns.PublishInput{TopicArn: createOut.TopicArn, Message: aws.String(message)}
+	if strings.TrimSpace(subject) != "" {
+		pubIn.Subject = aws.String(subject)
+	}
+	_, err = client.Publish(ctx, pubIn)
+	return err
+}

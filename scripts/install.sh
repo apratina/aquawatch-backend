@@ -280,22 +280,22 @@ main() {
   rm -rf "$BUILD_ROOT"
 
   # Build lambdas (preprocess and infer)
-  # build_zip "lambdas/preprocess" "$BUILD_ROOT/preprocess"
-  # build_zip "lambdas/infer" "$BUILD_ROOT/infer"
+  build_zip "lambdas/preprocess" "$BUILD_ROOT/preprocess"
+  build_zip "lambdas/infer" "$BUILD_ROOT/infer"
 
-  # # Upsert functions
-  # upsert_lambda "$PREPROCESS_FN" "$BUILD_ROOT/preprocess/package.zip" "$ROLE_ARN"
-  # upsert_lambda "$INFER_FN"      "$BUILD_ROOT/infer/package.zip"      "$ROLE_ARN"
+  # Upsert functions
+  upsert_lambda "$PREPROCESS_FN" "$BUILD_ROOT/preprocess/package.zip" "$ROLE_ARN"
+  upsert_lambda "$INFER_FN"      "$BUILD_ROOT/infer/package.zip"      "$ROLE_ARN"
 
-  # # Environment variables
-  # sleep 10
-  # set_env "$INFER_FN" "SAGEMAKER_ENDPOINT=$SAGEMAKER_ENDPOINT,S3_BUCKET=$S3_BUCKET"
+  # Environment variables
+  sleep 10
+  set_env "$INFER_FN" "SAGEMAKER_ENDPOINT=$SAGEMAKER_ENDPOINT,S3_BUCKET=$S3_BUCKET"
 
-  # # Create or update Step Functions state machine
-  # upsert_state_machine
+  # Create or update Step Functions state machine
+  upsert_state_machine
 
-  # # Ensure DynamoDB table exists
-  # ensure_prediction_tracker_table
+  # Ensure DynamoDB table exists
+  ensure_prediction_tracker_table
   ensure_alert_tracker_table
 
   # Ensure SNS topic exists and report ARN
