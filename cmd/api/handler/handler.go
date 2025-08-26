@@ -156,7 +156,7 @@ func PredictionStatusHandler(w http.ResponseWriter, r *http.Request) {
 		createdOn = item.CreatedOn
 		updatedOn = item.UpdatedOn
 		ageMs := time.Now().UTC().UnixMilli() - item.CreatedOn
-		inProgress = ageMs < 5*60*1000
+		inProgress = ageMs < 15*60*1000
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -425,4 +425,24 @@ func AnomalyCheckHandler(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	writeJSON(w, http.StatusOK, anomalyResponse{Items: items})
+}
+
+// ListAlertsHandler returns alerts from the last N minutes (default 10).
+// GET /alerts?minutes=10
+func ListAlertsHandler(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query().Get("minutes")
+	minutes := 10
+	if strings.TrimSpace(q) != "" {
+		var v int
+		if _, err := fmt.Sscanf(q, "%d", &v); err == nil && v > 0 && v <= 1440 {
+			minutes = v
+		}
+	}
+	since := time.Now().UTC().Add(-time.Duration(minutes) * time.Minute).UnixMilli()
+	items, err := internal.ListRecentAlerts(r.Context(), since, 200)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "failed to list alerts"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"alerts": items, "since_ms": since})
 }

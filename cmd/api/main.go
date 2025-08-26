@@ -41,6 +41,7 @@ func main() {
 	mux.HandleFunc("/sms/send", handler.SendSMSCodeHandler)
 	mux.HandleFunc("/sms/verify", handler.VerifySMSCodeHandler)
 	mux.HandleFunc("/report/pdf", handler.GenerateReportPDFHandler)
+	mux.HandleFunc("/alerts", handler.ListAlertsHandler)
 
 	addr := os.Getenv("PORT")
 	if addr == "" {

@@ -8,6 +8,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 )
 
 // Metadata captures minimal object metadata persisted to DynamoDB for
@@ -90,3 +91,48 @@ func SaveAlertTrackerRecord(ctx context.Context, record map[string]any) error {
 	})
 	return err
 }
+
+// ListRecentAlerts returns at most 'limit' alerts created on or after sinceEpochMs.
+// Uses a Scan with FilterExpression because the table's HASH key is the timestamp itself.
+func ListRecentAlerts(ctx context.Context, sinceEpochMs int64, limit int) ([]AlertTrackerItem, error) {
+	cfg := getAWSConfig()
+	client := dynamodb.NewFromConfig(cfg)
+	table := os.Getenv("ALERT_TRACKER_TABLE")
+	if table == "" {
+		table = "alert-tracker"
+	}
+	if limit <= 0 {
+		limit = 100
+	}
+	exprValues, err := attributevalue.MarshalMap(map[string]int64{":since": sinceEpochMs})
+	if err != nil {
+		return nil, err
+	}
+	var items []AlertTrackerItem
+	var lastKey map[string]types.AttributeValue
+	for {
+		out, err := client.Scan(ctx, &dynamodb.ScanInput{
+			TableName:                 &table,
+			FilterExpression:          awsString("createdon >= :since"),
+			ExpressionAttributeValues: exprValues,
+			ExclusiveStartKey:         lastKey,
+			Limit:                     awsInt32(int32(limit - len(items))),
+		})
+		if err != nil {
+			return nil, err
+		}
+		var batch []AlertTrackerItem
+		if err := attributevalue.UnmarshalListOfMaps(out.Items, &batch); err != nil {
+			return nil, err
+		}
+		items = append(items, batch...)
+		if len(items) >= limit || out.LastEvaluatedKey == nil || len(out.LastEvaluatedKey) == 0 {
+			break
+		}
+		lastKey = out.LastEvaluatedKey
+	}
+	return items, nil
+}
+
+func awsString(s string) *string { return &s }
+func awsInt32(v int32) *int32    { return &v }
