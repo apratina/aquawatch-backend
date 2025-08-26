@@ -202,6 +202,70 @@ func SubscribeAlertsHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// SendSMSCodeHandler starts a Vonage Verify request (SMS) for a phone number.
+// POST {"phone_e164":"+15551234567","brand":"AquaWatch"} -> {"session_id":"<request_id>"}
+func SendSMSCodeHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	var req struct {
+		PhoneE164 string `json:"phone_e164"`
+		Brand     string `json:"brand"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.PhoneE164) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
+		return
+	}
+	requestID, err := internal.VerifyStart(r.Context(), strings.TrimSpace(req.PhoneE164), strings.TrimSpace(req.Brand))
+	if err != nil {
+		log.Printf("verify start failed: %v", err)
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "failed to send code"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"session_id": requestID})
+}
+
+// VerifySMSCodeHandler checks the Vonage code and mints a session token on success.
+// POST {"session_id":"<request_id>","code":"123456"} -> {"token":"..."}
+func VerifySMSCodeHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	var req struct {
+		SessionID string `json:"session_id"`
+		Code      string `json:"code"`
+		PhoneE164 string `json:"phone_e164"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.SessionID == "" || strings.TrimSpace(req.Code) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
+		return
+	}
+	ok, err := internal.VerifyCheck(r.Context(), req.SessionID, strings.TrimSpace(req.Code))
+	if err != nil || !ok {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid code"})
+		return
+	}
+	// Mint a short-lived session token (default 12h)
+	ttl := 12 * time.Hour
+	if v := os.Getenv("SESSION_TTL_HOURS"); v != "" {
+		if d, err := time.ParseDuration(v + "h"); err == nil {
+			ttl = d
+		}
+	}
+	// Use provided phone if available; otherwise bind to empty string
+	phone := strings.TrimSpace(req.PhoneE164)
+	token, err := internal.MintSessionToken(phone, ttl)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to mint token"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"token": token})
+}
+
 // AnomalyCheckHandler accepts a site and bounding box and performs
 // fetch->preprocess->infer->anomaly detection using a configured threshold.
 // POST JSON body: {"site":"03339000","min_lat":..,"min_lng":..,"max_lat":..,"max_lng":..,"threshold_percent":10}
