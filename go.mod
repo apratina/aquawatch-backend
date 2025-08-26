@@ -8,11 +8,11 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.31.2
 	github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue v1.20.6
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.49.1
-	github.com/aws/aws-sdk-go-v2/service/sns v1.37.1
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.87.1
 	github.com/aws/aws-sdk-go-v2/service/sagemaker v1.212.0
 	github.com/aws/aws-sdk-go-v2/service/sagemakerruntime v1.36.2
 	github.com/aws/aws-sdk-go-v2/service/sfn v1.38.2
+	github.com/aws/aws-sdk-go-v2/service/sns v1.37.1
 )
 
 require (
@@ -33,4 +33,5 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.33.2 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.38.0 // indirect
 	github.com/aws/smithy-go v1.22.5 // indirect
+	github.com/jung-kurt/gofpdf v1.16.2 // indirect
 )

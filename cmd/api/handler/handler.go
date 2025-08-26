@@ -2,6 +2,7 @@ package handler
 
 import (
 	"aquawatch/internal"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -19,6 +20,12 @@ type ingestResponse struct {
 	Bytes        int    `json:"bytes,omitempty"`
 	Timestamp    string `json:"timestamp"`
 	ExecutionArn string `json:"execution_arn,omitempty"`
+}
+
+// reportPDFRequest represents the JSON body for generating the PDF report.
+type reportPDFRequest struct {
+	ImageBase64 string                `json:"image_base64"`
+	Items       []internal.ReportItem `json:"items"`
 }
 
 // anomalyRequest represents inputs from the frontend for the anomaly check.
@@ -264,6 +271,56 @@ func VerifySMSCodeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"token": token})
+}
+
+// GenerateReportPDFHandler accepts an image (base64) and table items, generates a PDF, uploads to S3, and returns the S3 key.
+// POST {"image_base64":"...","items":[{"site":"...","reason":"...","predicted_value":1.2,"anomaly_date":"2025-01-01"}]}
+func GenerateReportPDFHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	var req reportPDFRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
+		return
+	}
+	if strings.TrimSpace(req.ImageBase64) == "" || len(req.Items) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "image and items required"})
+		return
+	}
+	imgBytes, err := decodeBase64Image(req.ImageBase64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid image"})
+		return
+	}
+
+	pdfBytes, err := internal.GenerateReportPDF(r.Context(), imgBytes, req.Items)
+	if err != nil {
+		log.Printf("pdf generation failed: %v", err)
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "pdf generation failed"})
+		return
+	}
+	bucket := os.Getenv("S3_BUCKET")
+	if bucket == "" {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "S3_BUCKET not configured"})
+		return
+	}
+	key := fmt.Sprintf("reports/%d.pdf", time.Now().UTC().UnixNano())
+	if err := internal.SaveToS3WithKey(r.Context(), pdfBytes, bucket, key); err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "failed to upload pdf"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"s3_key": key})
+}
+
+func decodeBase64Image(s string) ([]byte, error) {
+	// Strip potential data URL prefix
+	if i := strings.Index(s, ","); i >= 0 {
+		s = s[i+1:]
+	}
+	return base64.StdEncoding.DecodeString(s)
 }
 
 // AnomalyCheckHandler accepts a site and bounding box and performs

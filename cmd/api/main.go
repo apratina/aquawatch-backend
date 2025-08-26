@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 )
 
 // withCORS wraps an http.Handler to add permissive CORS headers and handle preflight requests.
@@ -39,6 +40,7 @@ func main() {
 	mux.HandleFunc("/anomaly/check", handler.AnomalyCheckHandler)
 	mux.HandleFunc("/sms/send", handler.SendSMSCodeHandler)
 	mux.HandleFunc("/sms/verify", handler.VerifySMSCodeHandler)
+	mux.HandleFunc("/report/pdf", handler.GenerateReportPDFHandler)
 
 	addr := os.Getenv("PORT")
 	if addr == "" {
@@ -92,7 +94,38 @@ func main() {
 	})
 
 	log.Printf("Starting AquaWatch API on :%s", addr)
-	if err := http.ListenAndServe(":"+addr, withCORS(authenticated)); err != nil {
+	if err := http.ListenAndServe(":"+addr, withLogging(withCORS(authenticated))); err != nil {
 		log.Fatalf("server error: %v", err)
 	}
+}
+
+// withLogging logs request method, path, status, duration, and bytes written.
+type loggingResponseWriter struct {
+	http.ResponseWriter
+	status int
+	bytes  int
+}
+
+func (lrw *loggingResponseWriter) WriteHeader(code int) {
+	lrw.status = code
+	lrw.ResponseWriter.WriteHeader(code)
+}
+
+func (lrw *loggingResponseWriter) Write(b []byte) (int, error) {
+	if lrw.status == 0 {
+		lrw.status = http.StatusOK
+	}
+	n, err := lrw.ResponseWriter.Write(b)
+	lrw.bytes += n
+	return n, err
+}
+
+func withLogging(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		lrw := &loggingResponseWriter{ResponseWriter: w}
+		next.ServeHTTP(lrw, r)
+		dur := time.Since(start)
+		log.Printf("%s %s %d %dB %s ua=%q", r.Method, r.URL.Path, lrw.status, lrw.bytes, dur, r.UserAgent())
+	})
 }
