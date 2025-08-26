@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sort"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 )
 
 // Metadata captures minimal object metadata persisted to DynamoDB for
@@ -92,8 +92,7 @@ func SaveAlertTrackerRecord(ctx context.Context, record map[string]any) error {
 	return err
 }
 
-// ListRecentAlerts returns at most 'limit' alerts created on or after sinceEpochMs.
-// Uses a Scan with FilterExpression because the table's HASH key is the timestamp itself.
+// ListRecentAlerts queries the GSI gsi_recent (HASH gsi_pk='recent', RANGE createdon) for items since a timestamp.
 func ListRecentAlerts(ctx context.Context, sinceEpochMs int64, limit int) ([]AlertTrackerItem, error) {
 	cfg := getAWSConfig()
 	client := dynamodb.NewFromConfig(cfg)
@@ -104,35 +103,34 @@ func ListRecentAlerts(ctx context.Context, sinceEpochMs int64, limit int) ([]Ale
 	if limit <= 0 {
 		limit = 100
 	}
-	exprValues, err := attributevalue.MarshalMap(map[string]int64{":since": sinceEpochMs})
+	index := "gsi_recent"
+	values, err := attributevalue.MarshalMap(map[string]any{
+		":pk":    "recent",
+		":since": sinceEpochMs,
+	})
+	if err != nil {
+		return nil, err
+	}
+	out, err := client.Query(ctx, &dynamodb.QueryInput{
+		TableName:                 &table,
+		IndexName:                 &index,
+		KeyConditionExpression:    awsString("gsi_pk = :pk AND createdon >= :since"),
+		ExpressionAttributeValues: values,
+		ScanIndexForward:          awsBool(false),
+		Limit:                     awsInt32(int32(limit)),
+	})
 	if err != nil {
 		return nil, err
 	}
 	var items []AlertTrackerItem
-	var lastKey map[string]types.AttributeValue
-	for {
-		out, err := client.Scan(ctx, &dynamodb.ScanInput{
-			TableName:                 &table,
-			FilterExpression:          awsString("createdon >= :since"),
-			ExpressionAttributeValues: exprValues,
-			ExclusiveStartKey:         lastKey,
-			Limit:                     awsInt32(int32(limit - len(items))),
-		})
-		if err != nil {
-			return nil, err
-		}
-		var batch []AlertTrackerItem
-		if err := attributevalue.UnmarshalListOfMaps(out.Items, &batch); err != nil {
-			return nil, err
-		}
-		items = append(items, batch...)
-		if len(items) >= limit || out.LastEvaluatedKey == nil || len(out.LastEvaluatedKey) == 0 {
-			break
-		}
-		lastKey = out.LastEvaluatedKey
+	if err := attributevalue.UnmarshalListOfMaps(out.Items, &items); err != nil {
+		return nil, err
 	}
+	// Defensive: ensure descending
+	sort.Slice(items, func(i, j int) bool { return items[i].CreatedOnMs > items[j].CreatedOnMs })
 	return items, nil
 }
 
 func awsString(s string) *string { return &s }
 func awsInt32(v int32) *int32    { return &v }
+func awsBool(b bool) *bool       { return &b }

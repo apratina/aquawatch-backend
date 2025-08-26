@@ -107,6 +107,25 @@ curl -X POST "http://localhost:8080/alerts/subscribe" \
   -d '{"email":"you@example.com"}'
 ```
 
+Generate anomaly report PDF (image + items), upload to S3, and get a presigned URL (5 min):
+
+```bash
+curl -X POST "http://localhost:8080/report/pdf" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "image_base64": "<base64 image>",
+    "items": [
+      {"site":"03339000","reason":">10% deviation","predicted_value":66.2,"anomaly_date":"2025-09-01"}
+    ]
+  }'
+```
+
+List recent alerts from the Alert Tracker table (last 10 minutes by default):
+
+```bash
+curl "http://localhost:8080/alerts?minutes=10"
+```
+
 Example response:
 
 ```json

@@ -320,6 +320,7 @@ func GenerateReportPDFHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Best-effort: write alert tracker record
 	_ = internal.SaveAlertTrackerRecord(r.Context(), map[string]any{
+		"gsi_pk":         "recent",
 		"createdon":      time.Now().UTC().UnixMilli(),
 		"alert_id":       fmt.Sprintf("alert-%d", time.Now().UnixMilli()),
 		"alert_name":     "Anomaly Report",
@@ -441,6 +442,7 @@ func ListAlertsHandler(w http.ResponseWriter, r *http.Request) {
 	since := time.Now().UTC().Add(-time.Duration(minutes) * time.Minute).UnixMilli()
 	items, err := internal.ListRecentAlerts(r.Context(), since, 200)
 	if err != nil {
+		log.Printf("failed to list alerts: %v", err)
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "failed to list alerts"})
 		return
 	}
