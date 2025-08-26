@@ -312,7 +312,24 @@ func GenerateReportPDFHandler(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "failed to upload pdf"})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"s3_key": key})
+	url, err := internal.GeneratePresignedGetURL(r.Context(), bucket, key, 5*time.Minute)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]string{"s3_key": key})
+		return
+	}
+
+	// Best-effort: write alert tracker record
+	_ = internal.SaveAlertTrackerRecord(r.Context(), map[string]any{
+		"createdon":      time.Now().UTC().UnixMilli(),
+		"alert_id":       fmt.Sprintf("alert-%d", time.Now().UnixMilli()),
+		"alert_name":     "Anomaly Report",
+		"s3_signed_url":  url,
+		"severity":       "high",
+		"sites_impacted": collectSitesFromItems(req.Items),
+		"anomaly_date":   guessAnomalyDate(req.Items),
+	})
+
+	writeJSON(w, http.StatusOK, map[string]string{"s3_key": key, "url": url})
 }
 
 func decodeBase64Image(s string) ([]byte, error) {
@@ -321,6 +338,31 @@ func decodeBase64Image(s string) ([]byte, error) {
 		s = s[i+1:]
 	}
 	return base64.StdEncoding.DecodeString(s)
+}
+
+func collectSitesFromItems(items []internal.ReportItem) []string {
+	out := make([]string, 0, len(items))
+	seen := map[string]struct{}{}
+	for _, it := range items {
+		s := strings.TrimSpace(it.Site)
+		if s == "" {
+			continue
+		}
+		if _, ok := seen[s]; !ok {
+			seen[s] = struct{}{}
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+func guessAnomalyDate(items []internal.ReportItem) string {
+	for _, it := range items {
+		if strings.TrimSpace(it.AnomalyDate) != "" {
+			return it.AnomalyDate
+		}
+	}
+	return time.Now().UTC().Format(time.RFC3339)
 }
 
 // AnomalyCheckHandler accepts a site and bounding box and performs

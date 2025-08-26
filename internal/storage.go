@@ -9,19 +9,8 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
-
-// Metadata captures minimal object metadata persisted to DynamoDB for
-// observability and traceability of artifacts written to S3.
-type Metadata struct {
-	ID        string `dynamodbav:"id"`
-	S3Key     string `dynamodbav:"s3_key"`
-	SizeBytes int    `dynamodbav:"size_bytes"`
-	Timestamp string `dynamodbav:"timestamp"`
-}
 
 // getAWSConfig returns the default resolved AWS configuration used to create
 // service clients in this package.
@@ -90,24 +79,17 @@ func SaveToS3WithKey(ctx context.Context, data []byte, bucket, key string) error
 	return err
 }
 
-// SaveMetadata persists a small metadata record for an S3 object to DynamoDB.
-func SaveMetadata(ctx context.Context, s3Key string, size int) error {
+// GeneratePresignedGetURL returns a presigned GET url that expires after expiry.
+func GeneratePresignedGetURL(ctx context.Context, bucket, key string, expiry time.Duration) (string, error) {
 	cfg := getAWSConfig()
-	client := dynamodb.NewFromConfig(cfg)
-	table := os.Getenv("DDB_TABLE")
-	item := Metadata{
-		ID:        fmt.Sprintf("data-%d", time.Now().UnixNano()),
-		S3Key:     s3Key,
-		SizeBytes: size,
-		Timestamp: time.Now().UTC().Format(time.RFC3339),
-	}
-	av, err := attributevalue.MarshalMap(item)
+	s3Client := s3.NewFromConfig(cfg)
+	presigner := s3.NewPresignClient(s3Client)
+	out, err := presigner.PresignGetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+	}, s3.WithPresignExpires(expiry))
 	if err != nil {
-		return err
+		return "", err
 	}
-	_, err = client.PutItem(ctx, &dynamodb.PutItemInput{
-		TableName: &table,
-		Item:      av,
-	})
-	return err
+	return out.URL, nil
 }

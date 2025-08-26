@@ -209,6 +209,26 @@ ensure_prediction_tracker_table() {
   fi
 }
 
+# -------------------- DynamoDB: Alert Tracker --------------------
+
+ensure_alert_tracker_table() {
+  local table="alert-tracker"
+  if aws dynamodb describe-table --table-name "$table" >/dev/null 2>&1; then
+    echo "DynamoDB table $table already exists."
+  else
+    echo "Creating DynamoDB table $table ..."
+    aws dynamodb create-table \
+      --table-name "$table" \
+      --attribute-definitions \
+        AttributeName=createdon,AttributeType=N \
+      --key-schema \
+        AttributeName=createdon,KeyType=HASH \
+      --billing-mode PAY_PER_REQUEST >/dev/null
+    echo "Waiting for DynamoDB table to be active ..."
+    aws dynamodb wait table-exists --table-name "$table"
+  fi
+}
+
 # -------------------- SNS --------------------
 
 ensure_sns_topic() {
@@ -247,6 +267,7 @@ main() {
 
   # Ensure DynamoDB table exists
   ensure_prediction_tracker_table
+  ensure_alert_tracker_table
 
   # Ensure SNS topic exists and report ARN
   local SNS_TOPIC_ARN
