@@ -101,16 +101,16 @@ func ProcessInferAndDetect(ctx context.Context, stationID, parameter string, thr
 		parameter = "00060"
 	}
 
-	raw, err := GetWaterData(stationID, parameter)
+	raw, err := GetWaterDataBatch([]string{stationID}, parameter)
 	if err != nil {
 		return nil, err
 	}
-	observed, err := parseLatestObserved(raw)
+	observed, err := parseLatestObserved(raw[0])
 	if err != nil {
 		return nil, err
 	}
 
-	csvBytes, err := PreprocessDataCSV(ctx, raw)
+	csvBytes, err := PreprocessDataCSV(ctx, raw[0])
 	if err != nil {
 		return nil, err
 	}

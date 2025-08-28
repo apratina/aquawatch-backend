@@ -134,3 +134,83 @@ func ListRecentAlerts(ctx context.Context, sinceEpochMs int64, limit int) ([]Ale
 func awsString(s string) *string { return &s }
 func awsInt32(v int32) *int32    { return &v }
 func awsBool(b bool) *bool       { return &b }
+
+// -------------------- Train Model Tracker --------------------
+
+// TrainModelTrackerItem represents a training job record.
+// Table name defaults to "train-model-tracker"; override with TRAIN_MODEL_TRACKER_TABLE.
+type TrainModelTrackerItem struct {
+	UUID      string   `dynamodbav:"uuid" json:"uuid"`
+	CreatedOn int64    `dynamodbav:"createdon" json:"createdon"`
+	Sites     []string `dynamodbav:"sites" json:"sites"`
+}
+
+// SaveTrainModelTrackerItem writes a record to the train-model-tracker table.
+func SaveTrainModelTrackerItem(ctx context.Context, item TrainModelTrackerItem) error {
+	if item.UUID == "" {
+		return fmt.Errorf("uuid is required")
+	}
+	if item.CreatedOn == 0 {
+		item.CreatedOn = time.Now().UTC().UnixMilli()
+	}
+	cfg := getAWSConfig()
+	client := dynamodb.NewFromConfig(cfg)
+	table := os.Getenv("TRAIN_MODEL_TRACKER_TABLE")
+	if table == "" {
+		table = "train-model-tracker"
+	}
+	// Add GSI partition key for recent queries
+	record := map[string]any{
+		"uuid":      item.UUID,
+		"createdon": item.CreatedOn,
+		"sites":     item.Sites,
+		"gsi_pk":    "recent",
+	}
+	av, err := attributevalue.MarshalMap(record)
+	if err != nil {
+		return err
+	}
+	_, err = client.PutItem(ctx, &dynamodb.PutItemInput{
+		TableName: &table,
+		Item:      av,
+	})
+	return err
+}
+
+// ListRecentTrainModels queries gsi_recent to get items since a timestamp in descending order of createdon.
+func ListRecentTrainModels(ctx context.Context, sinceEpochMs int64, limit int) ([]TrainModelTrackerItem, error) {
+	cfg := getAWSConfig()
+	client := dynamodb.NewFromConfig(cfg)
+	table := os.Getenv("TRAIN_MODEL_TRACKER_TABLE")
+	if table == "" {
+		table = "train-model-tracker"
+	}
+	if limit <= 0 {
+		limit = 100
+	}
+	index := "gsi_recent"
+	values, err := attributevalue.MarshalMap(map[string]any{
+		":pk":    "recent",
+		":since": sinceEpochMs,
+	})
+	if err != nil {
+		return nil, err
+	}
+	out, err := client.Query(ctx, &dynamodb.QueryInput{
+		TableName:                 &table,
+		IndexName:                 &index,
+		KeyConditionExpression:    awsString("gsi_pk = :pk AND createdon >= :since"),
+		ExpressionAttributeValues: values,
+		ScanIndexForward:          awsBool(false),
+		Limit:                     awsInt32(int32(limit)),
+	})
+	if err != nil {
+		return nil, err
+	}
+	var items []TrainModelTrackerItem
+	if err := attributevalue.UnmarshalListOfMaps(out.Items, &items); err != nil {
+		return nil, err
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].CreatedOn > items[j].CreatedOn })
+	return items, nil
+}

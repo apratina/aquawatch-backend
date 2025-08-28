@@ -258,6 +258,56 @@ ensure_alert_tracker_table() {
   fi
 }
 
+# -------------------- DynamoDB: Train Model Tracker --------------------
+
+ensure_train_model_tracker_table() {
+  local table="train-model-tracker"
+  if aws dynamodb describe-table --table-name "$table" >/dev/null 2>&1; then
+    echo "DynamoDB table $table already exists."
+    # Ensure GSI for recent training jobs exists (gsi_recent on gsi_pk(createdon))
+    local gsi
+    gsi=$(aws dynamodb describe-table --table-name "$table" --query 'Table.GlobalSecondaryIndexes[?IndexName==`gsi_recent`].IndexName' --output text 2>/dev/null || true)
+    if [[ -z "$gsi" || "$gsi" == "None" ]]; then
+      echo "Adding GSI gsi_recent to $table ..."
+      aws dynamodb update-table \
+        --table-name "$table" \
+        --attribute-definitions AttributeName=gsi_pk,AttributeType=S AttributeName=createdon,AttributeType=N \
+        --global-secondary-index-updates ' [{
+          "Create": {
+            "IndexName": "gsi_recent",
+            "KeySchema": [
+              {"AttributeName": "gsi_pk", "KeyType": "HASH"},
+              {"AttributeName": "createdon", "KeyType": "RANGE"}
+            ],
+            "Projection": {"ProjectionType": "ALL"}
+          }
+        } ]' >/dev/null
+      echo "Waiting for GSI to be active ..."
+      aws dynamodb wait table-exists --table-name "$table"
+    fi
+  else
+    echo "Creating DynamoDB table $table ..."
+    aws dynamodb create-table \
+      --table-name "$table" \
+      --attribute-definitions \
+        AttributeName=uuid,AttributeType=S AttributeName=createdon,AttributeType=N AttributeName=gsi_pk,AttributeType=S \
+      --key-schema \
+        AttributeName=uuid,KeyType=HASH \
+        AttributeName=createdon,KeyType=RANGE \
+      --billing-mode PAY_PER_REQUEST \
+      --global-secondary-indexes '[{
+        "IndexName": "gsi_recent",
+        "KeySchema": [
+          {"AttributeName": "gsi_pk", "KeyType": "HASH"},
+          {"AttributeName": "createdon", "KeyType": "RANGE"}
+        ],
+        "Projection": {"ProjectionType": "ALL"}
+      }]' >/dev/null
+    echo "Waiting for DynamoDB table to be active ..."
+    aws dynamodb wait table-exists --table-name "$table"
+  fi
+}
+
 # -------------------- SNS --------------------
 
 ensure_sns_topic() {
@@ -297,6 +347,7 @@ main() {
   # Ensure DynamoDB table exists
   ensure_prediction_tracker_table
   ensure_alert_tracker_table
+  ensure_train_model_tracker_table
 
   # Ensure SNS topic exists and report ARN
   local SNS_TOPIC_ARN

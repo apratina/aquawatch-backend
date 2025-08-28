@@ -3,7 +3,9 @@ package internal
 import (
 	"fmt"
 	"io"
+	"log"
 	"net/http"
+	"strings"
 )
 
 // USGSResponse is a minimal placeholder for potential parsing of the USGS
@@ -19,32 +21,50 @@ type USGSResponse struct {
 	} `json:"value"`
 }
 
-// GetWaterData issues a simple HTTP GET against the USGS Instantaneous Values
-// service for the provided station and parameter code (e.g., 00060 = discharge,
-// 00065 = gage height). It returns the raw JSON bytes as delivered by the API.
-func GetWaterData(stationID, parameter string) ([]byte, error) {
-	// Replace 'parameter' with "00060" for streamflow or "00065" for gage height
-	url := fmt.Sprintf(
-		"https://waterservices.usgs.gov/nwis/iv/?format=json&sites=%s&parameterCd=%s",
-		stationID,
-		parameter,
-	)
+// GetWaterDataBatch fetches USGS Instantaneous Values for each station id in the slice
+// and returns one raw JSON payload per station, in the same order.
+// parameter example: "00060" (discharge), "00065" (gage height)
+func GetWaterDataBatch(stationIDs []string, parameter string) ([][]byte, error) {
+	results := make([][]byte, 0, len(stationIDs))
+	for _, stationID := range stationIDs {
+		stationID = strings.TrimSpace(stationID)
+		log.Println("get water data for stationID", stationID)
+		if stationID == "" {
+			results = append(results, nil)
+			continue
+		}
+		url := fmt.Sprintf(
+			"https://waterservices.usgs.gov/nwis/iv/?format=json&sites=%s&parameterCd=%s",
+			stationID,
+			parameter,
+		)
+		resp, err := http.Get(url)
+		if err != nil {
+			return nil, fmt.Errorf("USGS API request failed for %s: %w", stationID, err)
+		}
+		if resp.Body != nil {
+			defer resp.Body.Close()
+		}
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("USGS API non-OK status for %s: %d", stationID, resp.StatusCode)
+		}
+		data, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("reading HTTP response failed for %s: %w", stationID, err)
+		}
+		results = append(results, data)
+	}
+	return results, nil
+}
 
-	resp, err := http.Get(url)
+// GetWaterData is a compatibility wrapper for fetching a single station's payload.
+func GetWaterData(stationID string, parameter string) ([]byte, error) {
+	payloads, err := GetWaterDataBatch([]string{stationID}, parameter)
 	if err != nil {
-		return nil, fmt.Errorf("USGS API request failed: %w", err)
+		return nil, err
 	}
-
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("USGS API non-OK status: %d", resp.StatusCode)
+	if len(payloads) == 0 || payloads[0] == nil {
+		return nil, fmt.Errorf("no data returned for station %s", stationID)
 	}
-
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("reading HTTP response failed: %w", err)
-	}
-
-	// Caller performs any domain-specific validation/parsing.
-	return data, nil
+	return payloads[0], nil
 }

@@ -12,13 +12,24 @@ The project is written in Go and designed to run on AWS (Lambda, S3, Step Functi
 
 ## DynamoDB
 
-The deploy script also ensures a DynamoDB table exists for simple prediction tracking:
+The deploy script ensures the following DynamoDB tables exist (all are PAY_PER_REQUEST):
 
-- Table: `prediction-tracker` (can be overridden by `PREDICTION_TRACKER_TABLE`)
-- Keys: partition key = `site` (String), sort key = `status` (String)
-- Attributes written by the API: `createdon` (Number, epoch ms), `updatedon` (Number, epoch ms)
+- Prediction Tracker
+  - Table: `prediction-tracker` (override via `PREDICTION_TRACKER_TABLE`)
+  - Keys: PK `site` (String), SK `status` (String)
+  - Attributes: `createdon` (Number, epoch ms), `updatedon` (Number, epoch ms)
 
-The script creates the table with on-demand billing and waits until active:
+- Alert Tracker
+  - Table: `alert-tracker` (override via `ALERT_TRACKER_TABLE`)
+  - Keys: PK `createdon` (Number, epoch ms)
+  - GSI: `gsi_recent` with PK `gsi_pk` (String, constant "recent" for new records) and SK `createdon` (Number)
+
+- Train Model Tracker
+  - Table: `train-model-tracker` (override via `TRAIN_MODEL_TRACKER_TABLE`)
+  - Keys: PK `uuid` (String), SK `createdon` (Number, epoch ms)
+  - GSI: `gsi_recent` with PK `gsi_pk` (String, constant "recent" for new records) and SK `createdon` (Number)
+
+The script creates/updates the tables and waits until active:
 
 ```bash
 ./scripts/install.sh
@@ -137,6 +148,49 @@ Example response:
   "updatedon_ms": 1732470000000
 }
 ```
+
+## API Endpoints
+
+- Ingest pipeline (supports multiple stations)
+  - GET `/ingest?stations=03339000,03339001&parameter=00060&train=false`
+  - Or repeat `station` multiple times: `/ingest?station=03339000&station=03339001`
+
+- Prediction status
+  - GET `/prediction/status?site=03339000&status=started`
+
+- Alerts
+  - POST `/alerts/subscribe` body: `{ "email": "you@example.com" }`
+  - GET `/alerts?minutes=10`
+
+- Anomaly check
+  - POST `/anomaly/check`
+  - Body:
+    ```json
+    {
+      "sites": ["03339000", "03339001"],
+      "min_lat": 0, "min_lng": 0, "max_lat": 0, "max_lng": 0,
+      "threshold_percent": 10,
+      "parameter": "00060"
+    }
+    ```
+
+- PDF report
+  - POST `/report/pdf` body: `{ "image_base64": "...", "items": [{"site":"...","reason":"...","predicted_value": 1.2, "anomaly_date": "2025-01-01"}] }`
+
+- Train model tracker (descending by createdon)
+  - GET `/train/models?minutes=60`
+  - Response shape:
+    ```json
+    { "items": [ { "uuid": "aquawatch-train-123", "createdon": 1732470000000, "sites": ["03339000"] } ] }
+    ```
+
+## Authentication and CORS
+
+- CORS: Responses include permissive headers allowing any origin.
+- Authentication: Vonage Verify-based OTP can be enabled via `VONAGE_VERIFY_ENABLED` (set to `false` to disable).
+  - Start: POST `/sms/send` body `{ "phone_e164": "+15551234567", "brand": "AquaWatch" }` → `{ "session_id": "..." }`
+  - Verify: POST `/sms/verify` body `{ "session_id": "...", "code": "123456", "phone_e164": "+15551234567" }` → `{ "token": "..." }`
+  - Subsequent requests can pass `X-Session-Token: <token>` header instead of Vonage headers.
 
 ## Data & features
 

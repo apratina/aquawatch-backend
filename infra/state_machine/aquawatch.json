@@ -92,7 +92,8 @@
         "Payload": {
           "bucket.$": "$.bucket",
           "processed_key.$": "$.processedKey",
-          "s3_model_artifacts.$": "$.trainResult.ModelArtifacts.S3ModelArtifacts"
+          "s3_model_artifacts.$": "$.trainResult.ModelArtifacts.S3ModelArtifacts",
+          "sites.$": "$.station"
         }
       },
       "ResultPath": null,

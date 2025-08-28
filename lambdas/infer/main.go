@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-lambda-go/lambda"
 )
@@ -25,9 +26,10 @@ type Prediction struct {
 // execution, s3_model_artifacts carries the model artifact S3 URI. For MME,
 // the handler derives the model file name (or uses env).
 type inferInput struct {
-	Bucket           string `json:"bucket"`
-	ProcessedKey     string `json:"processed_key"`
-	S3ModelArtifacts string `json:"s3_model_artifacts,omitempty"`
+	Bucket           string   `json:"bucket"`
+	ProcessedKey     string   `json:"processed_key"`
+	S3ModelArtifacts string   `json:"s3_model_artifacts,omitempty"`
+	Sites            []string `json:"sites"`
 }
 
 func handler(ctx context.Context, input inferInput) error {
@@ -86,6 +88,33 @@ func handler(ctx context.Context, input inferInput) error {
 	}
 
 	log.Println("raw prediction bytes:", string(predBytes))
+
+	// Best-effort: record training job details if available
+	uuid := ""
+	if input.S3ModelArtifacts != "" {
+		// Expected: s3://<bucket>/model/<training-job-name>/output/model.tar.gz
+		parts := strings.Split(input.S3ModelArtifacts, "/model/")
+		if len(parts) == 2 {
+			tail := parts[1]
+			if idx := strings.Index(tail, "/"); idx > 0 {
+				uuid = tail[:idx]
+			} else {
+				uuid = tail
+			}
+		}
+	}
+	if uuid == "" {
+		uuid = fmt.Sprintf("train-%d", time.Now().UTC().UnixNano())
+	}
+	err = internal.SaveTrainModelTrackerItem(ctx, internal.TrainModelTrackerItem{
+		UUID:      uuid,
+		CreatedOn: time.Now().UTC().UnixMilli(),
+		Sites:     input.Sites,
+	})
+	if err != nil {
+		log.Printf("failed to save train model tracker item: %v", err)
+	}
+
 	return nil
 }
 

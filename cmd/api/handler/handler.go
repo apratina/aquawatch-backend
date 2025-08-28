@@ -71,10 +71,29 @@ func IngestHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stationID := r.URL.Query().Get("station")
-	if stationID == "" {
-		stationID = "03339000"
+	// Accept multiple stations: repeated station params and/or comma-separated 'stations'
+	var stationIDs []string
+	if vals, ok := r.URL.Query()["station"]; ok {
+		for _, v := range vals {
+			v = strings.TrimSpace(v)
+			if v != "" {
+				stationIDs = append(stationIDs, v)
+			}
+		}
 	}
+	if s := strings.TrimSpace(r.URL.Query().Get("stations")); s != "" {
+		parts := strings.Split(s, ",")
+		for _, p := range parts {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				stationIDs = append(stationIDs, p)
+			}
+		}
+	}
+	if len(stationIDs) == 0 {
+		stationIDs = []string{"03339000"}
+	}
+
 	parameter := r.URL.Query().Get("parameter")
 	if parameter == "" {
 		parameter = "00060"
@@ -96,20 +115,16 @@ func IngestHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	processedKey := fmt.Sprintf("processed/%s/%d.csv", stationID, time.Now().UTC().Unix())
+	processedKey := fmt.Sprintf("processed/%d.csv", time.Now().UTC().Unix())
 
 	input := map[string]any{
-		"station":      stationID,
+		"station":      stationIDs,
 		"parameter":    parameter,
 		"bucket":       bucket,
 		"processedKey": processedKey,
 		"train":        trainFlag,
 	}
 
-	// Record a "started" status for this site in DynamoDB (best-effort).
-	if err := internal.AddPredictionTrackerStarted(ctx, stationID); err != nil {
-		log.Printf("ddbv2: failed to write prediction-tracker started item: %v", err)
-	}
 	execArn, err := internal.StartStateMachine(ctx, stateMachineArn, input)
 	if err != nil {
 		log.Printf("start state machine failed: %v", err)
@@ -463,4 +478,25 @@ func ListAlertsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"alerts": items, "since_ms": since})
+}
+
+// ListTrainModelsHandler returns training records from the last N minutes (default 60) in descending order.
+// GET /train/models?minutes=60
+func ListTrainModelsHandler(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query().Get("minutes")
+	minutes := 60
+	if strings.TrimSpace(q) != "" {
+		var v int
+		if _, err := fmt.Sscanf(q, "%d", &v); err == nil && v > 0 && v <= 10080 { // up to 7 days
+			minutes = v
+		}
+	}
+	since := time.Now().UTC().Add(-time.Duration(minutes) * time.Minute).UnixMilli()
+	items, err := internal.ListRecentTrainModels(r.Context(), since, 200)
+	if err != nil {
+		log.Printf("failed to list train models: %v", err)
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "failed to list train models"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items, "since_ms": since})
 }

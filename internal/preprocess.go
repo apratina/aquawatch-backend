@@ -6,6 +6,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"log"
 	"time"
 )
 
@@ -204,5 +205,27 @@ func PreprocessDataCSV(ctx context.Context, rawData []byte) ([]byte, error) {
 		return nil, fmt.Errorf("csv writer error: %w", err)
 	}
 
+	return buf.Bytes(), nil
+}
+
+// PreprocessDataCSVBatch takes multiple raw USGS JSON payloads and concatenates their
+// CSV feature rows (no header). Each payload should be a standalone USGS JSON document.
+func PreprocessDataCSVBatch(ctx context.Context, rawPayloads [][]byte) ([]byte, error) {
+	buf := &bytes.Buffer{}
+	for i, p := range rawPayloads {
+		log.Println("PreprocessDataCSVBatch - input", i, string(p))
+		if len(p) == 0 {
+			continue
+		}
+		b, err := PreprocessDataCSV(ctx, p)
+		if err != nil {
+			return nil, err
+		}
+		if buf.Len() > 0 && buf.Bytes()[buf.Len()-1] != '\n' {
+			buf.WriteByte('\n')
+		}
+		log.Println("PreprocessDataCSVBatch - output", i, string(b))
+		buf.Write(b)
+	}
 	return buf.Bytes(), nil
 }
