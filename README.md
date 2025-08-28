@@ -101,44 +101,44 @@ PORT=8080 S3_BUCKET=$S3_BUCKET STATE_MACHINE_ARN=arn:aws:states:$AWS_REGION:$ACC
 1) Decide region
 - Choose an AWS region that supports SageMaker, Step Functions, and Lambda (e.g., `us-west-2`).
 - Export env vars:
-```bash
-export AWS_REGION=us-west-2
-export ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-```
+  ```bash
+  export AWS_REGION=us-west-2
+  export ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+  ```
 
 2) Create S3 bucket
 - Create a bucket to store processed CSV and model artifacts:
-```bash
-aws s3 mb s3://<your-aquawatch-bucket> --region $AWS_REGION
-export S3_BUCKET=<your-aquawatch-bucket>
-```
+  ```bash
+  aws s3 mb s3://<your-aquawatch-bucket> --region $AWS_REGION
+  export S3_BUCKET=<your-aquawatch-bucket>
+  ```
 
 3) SageMaker setup (domain, model, endpoint config, endpoint)
 - Create a SageMaker Domain (Studio) once per account/region if not already present (can be done via Console: SageMaker → Studio → Set up domain). This is optional for inference-only, but recommended for manageability.
 - Build or select a container image (XGBoost example used here) and produce a model artifact in S3.
 - Create a SageMaker Model referencing the container and model artifact:
-```bash
-aws sagemaker create-model \
-  --model-name aquawatch-xgb-model \
-  --primary-container Image=246618743249.dkr.ecr.$AWS_REGION.amazonaws.com/sagemaker-xgboost:1.7-1,ModelDataUrl=s3://$S3_BUCKET/model/aquawatch-train-default/output/model.tar.gz \
-  --execution-role-arn arn:aws:iam::$ACCOUNT_ID:role/aquawatch-sagemaker-exec-role
-```
+  ```bash
+  aws sagemaker create-model \
+    --model-name aquawatch-xgb-model \
+    --primary-container Image=246618743249.dkr.ecr.$AWS_REGION.amazonaws.com/sagemaker-xgboost:1.7-1,ModelDataUrl=s3://$S3_BUCKET/model/aquawatch-train-default/output/model.tar.gz \
+    --execution-role-arn arn:aws:iam::$ACCOUNT_ID:role/aquawatch-sagemaker-exec-role
+  ```
 - Create an endpoint configuration:
-```bash
-aws sagemaker create-endpoint-config \
-  --endpoint-config-name aquawatch-xgb-config \
-  --production-variants '[{"VariantName":"AllTraffic","ModelName":"aquawatch-xgb-model","InitialInstanceCount":1,"InstanceType":"ml.c5.large"}]'
-```
+  ```bash
+  aws sagemaker create-endpoint-config \
+    --endpoint-config-name aquawatch-xgb-config \
+    --production-variants '[{"VariantName":"AllTraffic","ModelName":"aquawatch-xgb-model","InitialInstanceCount":1,"InstanceType":"ml.c5.large"}]'
+  ```
 - Create an endpoint:
-```bash
-aws sagemaker create-endpoint \
-  --endpoint-name aquawatch-xgb \
-  --endpoint-config-name aquawatch-xgb-config
-```
+  ```bash
+  aws sagemaker create-endpoint \
+    --endpoint-name aquawatch-xgb \
+    --endpoint-config-name aquawatch-xgb-config
+  ```
 - Wait until endpoint is `InService`, then set:
-```bash
-export SAGEMAKER_ENDPOINT=aquawatch-xgb
-```
+  ```bash
+  export SAGEMAKER_ENDPOINT=aquawatch-xgb
+  ```
 
 4) IAM roles
 - Lambda execution role (created automatically by `scripts/install.sh` if missing): `aquawatch-lambda-role` with S3 + SageMaker Invoke permissions.
@@ -155,9 +155,9 @@ export SAGEMAKER_ENDPOINT=aquawatch-xgb
 - Place a default model tarball at:
   - `s3://$S3_BUCKET/model/aquawatch-train-default/output/model.tar.gz`
 - Set the environment variable so infer can locate it when `train=false`:
-```bash
-export DEFAULT_MODEL=s3://$S3_BUCKET/model/aquawatch-train-default/output/model.tar.gz
-```
+  ```bash
+  export DEFAULT_MODEL=s3://$S3_BUCKET/model/aquawatch-train-default/output/model.tar.gz
+  ```
 
 Trigger ingestion:
 
