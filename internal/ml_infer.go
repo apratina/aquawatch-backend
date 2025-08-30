@@ -3,6 +3,7 @@ package internal
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -18,6 +19,10 @@ func InvokeEndpoint(ctx context.Context, endpointName string, inputData []byte, 
 	}
 
 	client := sagemakerruntime.NewFromConfig(cfg)
+
+	log.Println("endpointName", endpointName)
+	log.Println("targetModel", targetModel)
+	log.Println("inputData", string(inputData))
 
 	in := &sagemakerruntime.InvokeEndpointInput{
 		EndpointName: &endpointName,

@@ -13,6 +13,11 @@ import (
 	"time"
 )
 
+const (
+	minPredictedValue       = 15
+	defaultThresholdPercent = 20
+)
+
 // AnomalyResult encapsulates the outcome of processing, inference, and anomaly detection.
 type AnomalyResult struct {
 	S3Key          string  `json:"s3_key"`
@@ -35,7 +40,7 @@ func parseLatestObserved(raw []byte) (float64, error) {
 		found := false
 		for _, vv := range ts.Values {
 			for _, p := range vv.Value {
-				t, err := time.Parse(time.RFC3339, p.DateTime)
+				t, err := parseUSGSTime(p.DateTime)
 				if err != nil {
 					continue
 				}
@@ -93,7 +98,7 @@ func parsePredictions(output []byte) (float64, error) {
 
 // ProcessInferAndDetect executes the flow: fetch -> preprocess CSV -> store -> infer -> detect anomaly.
 // thresholdPercent is a percentage (e.g., 10 means 10%).
-func ProcessInferAndDetect(ctx context.Context, stationID, parameter string, thresholdPercent float64) (*AnomalyResult, error) {
+func ProcessInferAndDetect(ctx context.Context, stationID, parameter string) (*AnomalyResult, error) {
 	if stationID == "" {
 		return nil, errors.New("station id required")
 	}
@@ -164,7 +169,7 @@ func ProcessInferAndDetect(ctx context.Context, stationID, parameter string, thr
 
 	den := math.Max(1e-9, math.Abs(observed))
 	percent := math.Abs(predicted-observed) / den * 100.0
-	anom := percent > thresholdPercent
+	anom := percent > defaultThresholdPercent && predicted > minPredictedValue
 
 	return &AnomalyResult{
 		S3Key:          key,

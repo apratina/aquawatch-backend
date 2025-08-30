@@ -116,6 +116,8 @@ func parseUSGSTime(s string) (time.Time, error) {
 		time.RFC3339,
 		time.RFC3339Nano,
 		"2006-01-02T15:04:05.000-07:00",
+		"2006-01-02T15:04:05.000",
+		"2006-01-02T15:04:05",
 		"2006-01-02",
 		"2006-01-02 15:04:05-07:00",
 		"2006-01-02 15:04:05",
@@ -150,6 +152,7 @@ func PreprocessData(ctx context.Context, rawData []byte) ([]byte, error) {
 			for _, point := range v.Value {
 				t, err := parseUSGSTime(point.DateTime)
 				if err != nil {
+					log.Println("error parsing USGS time", err)
 					continue
 				}
 				var value float64

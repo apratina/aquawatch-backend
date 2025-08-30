@@ -35,7 +35,6 @@ type anomalyRequest struct {
 	MinLng    float64  `json:"min_lng"`
 	MaxLat    float64  `json:"max_lat"`
 	MaxLng    float64  `json:"max_lng"`
-	Threshold float64  `json:"threshold_percent"`
 	Parameter string   `json:"parameter"`
 }
 
@@ -401,14 +400,9 @@ func AnomalyCheckHandler(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing sites"})
 		return
 	}
-	if len(sites) > 20 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "too many sites (max 20)"})
+	if len(sites) > 30 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "too many sites (max 30)"})
 		return
-	}
-	threshold := req.Threshold
-	if threshold <= 0 {
-		// default 10%
-		threshold = 10
 	}
 	parameter := req.Parameter
 	if parameter == "" {
@@ -421,7 +415,7 @@ func AnomalyCheckHandler(w http.ResponseWriter, r *http.Request) {
 		if site == "" {
 			continue
 		}
-		res, err := internal.ProcessInferAndDetect(r.Context(), site, parameter, threshold)
+		res, err := internal.ProcessInferAndDetect(r.Context(), site, parameter)
 		if err != nil {
 			log.Printf("anomaly flow failed for site %s: %v", site, err)
 			continue
