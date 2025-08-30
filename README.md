@@ -250,6 +250,8 @@ Example response:
 ## Lambdas
 
 - Preprocess (`aquawatch-preprocess`): fetches water + weather data and writes CSV to S3.
+  - Now fetches USGS Daily Values for the last 30 days first, using the DV endpoint (statCd=00003, mean). If DV fails, it falls back to instantaneous values (IV), and finally to a baked-in mock payload.
+  - Timestamp handling is robust across IV and DV feeds; daily-only dates are parsed and converted to Unix seconds at 00:00 UTC.
 - Infer (`aquawatch-infer`): calls SageMaker endpoint for predictions; best-effort records training UUID if present.
 - Train Model Tracker (`aquawatch-train-tracker`): saves a record in DynamoDB after training completes. Input shape:
   ```json
@@ -278,6 +280,10 @@ value,timestamp_unix,latitude,longitude,wx_temp
 - `value` is the label (e.g., streamflow)
 - `timestamp_unix`, `latitude`, `longitude` are features
 - `wx_temp` is current forecast temperature (from NOAA), used as a numeric feature
+
+Notes:
+- For DV feeds, the data are daily aggregates over the last 30 days; timestamps reflect midnight UTC of that day.
+- If your model expects higher frequency, consider extending preprocessing to resample IV data or compute lags/rolling features.
 
 Additional context is available through `internal/preprocess.go` and `internal/weather.go`.
 

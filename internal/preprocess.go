@@ -110,6 +110,27 @@ type USGSJSON struct {
 	} `json:"value"`
 }
 
+// parseUSGSTime attempts multiple layouts common in USGS IV/DV feeds.
+func parseUSGSTime(s string) (time.Time, error) {
+	layouts := []string{
+		time.RFC3339,
+		time.RFC3339Nano,
+		"2006-01-02T15:04:05.000-07:00",
+		"2006-01-02",
+		"2006-01-02 15:04:05-07:00",
+		"2006-01-02 15:04:05",
+	}
+	var lastErr error
+	for _, layout := range layouts {
+		t, err := time.Parse(layout, s)
+		if err == nil {
+			return t, nil
+		}
+		lastErr = err
+	}
+	return time.Time{}, lastErr
+}
+
 // PreprocessData parses raw USGS JSON and converts it into structured ProcessedData
 func PreprocessData(ctx context.Context, rawData []byte) ([]byte, error) {
 	var usgs USGSJSON
@@ -127,7 +148,7 @@ func PreprocessData(ctx context.Context, rawData []byte) ([]byte, error) {
 		lng := ts.SourceInfo.GeoLocation.GeogLocation.Longitude
 		for _, v := range ts.Values {
 			for _, point := range v.Value {
-				t, err := time.Parse(time.RFC3339, point.DateTime)
+				t, err := parseUSGSTime(point.DateTime)
 				if err != nil {
 					continue
 				}
@@ -179,7 +200,7 @@ func PreprocessDataCSV(ctx context.Context, rawData []byte) ([]byte, error) {
 
 		for _, v := range ts.Values {
 			for _, point := range v.Value {
-				t, err := time.Parse(time.RFC3339, point.DateTime)
+				t, err := parseUSGSTime(point.DateTime)
 				if err != nil {
 					continue
 				}
