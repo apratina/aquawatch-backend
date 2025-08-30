@@ -58,7 +58,7 @@ Notes:
 
 - `cmd/api/` – HTTP API server entrypoint and handlers
 - `internal/` – shared helpers (USGS fetch, preprocessing, weather, storage, inference)
-- `lambdas/` – Lambda handlers (`preprocess`, `infer`)
+- `lambdas/` – Lambda handlers (`preprocess`, `infer`, `train_model_tracker`)
 - `infra/state_machine/` – Step Functions definition (`aquawatch.json`)
 - `scripts/` – deployment helpers (`install.sh`)
 
@@ -83,7 +83,7 @@ export DEFAULT_MODEL=s3://your-aquawatch-bucket/model/your-model/output/model.ta
 export SNS_TOPIC_NAME=aquawatch-alerts
 ```
 
-Deploy Lambda functions and Step Functions (renders placeholders in the state machine):
+Deploy Lambda functions and Step Functions (renders placeholders in the state machine). The script builds and upserts three functions: `aquawatch-preprocess`, `aquawatch-infer`, and `aquawatch-train-tracker`.
 
 ```bash
 ./scripts/install.sh
@@ -247,6 +247,18 @@ Example response:
     { "items": [ { "uuid": "aquawatch-train-123", "createdon": 1732470000000, "sites": ["03339000"] } ] }
     ```
 
+## Lambdas
+
+- Preprocess (`aquawatch-preprocess`): fetches water + weather data and writes CSV to S3.
+- Infer (`aquawatch-infer`): calls SageMaker endpoint for predictions; best-effort records training UUID if present.
+- Train Model Tracker (`aquawatch-train-tracker`): saves a record in DynamoDB after training completes. Input shape:
+  ```json
+  { "createdon": 1732470000000, "sites": ["03339000", "06730500"] }
+  ```
+  Notes:
+  - The state machine invokes this after `Train`, passing `sites` and generating a UUID internally.
+  - Override table name via `TRAIN_MODEL_TRACKER_TABLE` env var.
+
 ## Authentication and CORS
 
 - CORS: Responses include permissive headers allowing any origin.
@@ -278,7 +290,7 @@ Placeholders replaced by the deploy script:
 - `REAL_AWS_REGION` → your current `$AWS_REGION`
 
 When `train=false`, a “UseExistingModel” step supplies a pre-existing model artifact for inference.
-When `train=true`, the training job runs synchronously and the resulting model artifact is forwarded to infer.
+When `train=true`, the training job runs synchronously, then the `RecordTrainModel` Lambda (`aquawatch-train-tracker`) persists a record into `train-model-tracker`, and the resulting model artifact is forwarded to infer.
 
 ## Development
 

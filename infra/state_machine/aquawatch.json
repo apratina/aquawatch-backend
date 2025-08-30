@@ -82,6 +82,18 @@
         }
       },
       "ResultPath": "$.trainResult",
+      "Next": "RecordTrainModel"
+    },
+    "RecordTrainModel": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:REAL_AWS_REGION:REAL_ACCOUNT_ID:function:aquawatch-train-tracker",
+        "Payload": {
+          "sites.$": "$.station"
+        }
+      },
+      "ResultPath": null,
       "Next": "Infer"
     },
     "Infer": {

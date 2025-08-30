@@ -46,6 +46,7 @@ GOARCH="amd64"; [[ "$ARCH" == "arm64" ]] && GOARCH="arm64"
 # Function names
 PREPROCESS_FN="${PREPROCESS_FN:-aquawatch-preprocess}"
 INFER_FN="${INFER_FN:-aquawatch-infer}"
+TRAIN_TRACKER_FN="${TRAIN_TRACKER_FN:-aquawatch-train-tracker}"
 
 # SNS topic name for alerts
 SNS_TOPIC_NAME="${SNS_TOPIC_NAME:-aquawatch-alerts}"
@@ -83,33 +84,44 @@ create_or_get_role() {
       --role-name "$LAMBDA_ROLE_NAME" \
       --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
 
-    # Inline policy with S3 + InvokeEndpoint
-    aws iam put-role-policy \
-      --role-name "$LAMBDA_ROLE_NAME" \
-      --policy-name aquawatch-inline \
-      --policy-document "{
-        \"Version\": \"2012-10-17\",
-        \"Statement\": [
-          {
-            \"Effect\": \"Allow\",
-            \"Action\": [\"s3:GetObject\",\"s3:PutObject\",\"s3:ListBucket\"],
-            \"Resource\": [
-              \"arn:aws:s3:::${S3_BUCKET}\",
-              \"arn:aws:s3:::${S3_BUCKET}/*\"
-            ]
-          },
-          {
-            \"Effect\": \"Allow\",
-            \"Action\": [\"sagemaker:InvokeEndpoint\"],
-            \"Resource\": \"*\"
-          }
-        ]
-      }" >/dev/null
-
     echo "Waiting for role to propagate..."
     sleep 8
     arn="$(role_arn)"
   fi
+  # Ensure/refresh inline policy with S3 + InvokeEndpoint + DynamoDB
+  aws iam put-role-policy \
+    --role-name "$LAMBDA_ROLE_NAME" \
+    --policy-name aquawatch-inline \
+    --policy-document "{
+      \"Version\": \"2012-10-17\",
+      \"Statement\": [
+        {
+          \"Effect\": \"Allow\",
+          \"Action\": [\"s3:GetObject\",\"s3:PutObject\",\"s3:ListBucket\"],
+          \"Resource\": [
+            \"arn:aws:s3:::${S3_BUCKET}\",
+            \"arn:aws:s3:::${S3_BUCKET}/*\"
+          ]
+        },
+        {
+          \"Effect\": \"Allow\",
+          \"Action\": [\"sagemaker:InvokeEndpoint\"],
+          \"Resource\": \"*\"
+        },
+        {
+          \"Effect\": \"Allow\",
+          \"Action\": [\"dynamodb:PutItem\",\"dynamodb:GetItem\",\"dynamodb:Query\"],
+          \"Resource\": [
+            \"arn:aws:dynamodb:${AWS_REGION}:${ACCOUNT_ID}:table/alert-tracker\",
+            \"arn:aws:dynamodb:${AWS_REGION}:${ACCOUNT_ID}:table/alert-tracker/index/*\",
+            \"arn:aws:dynamodb:${AWS_REGION}:${ACCOUNT_ID}:table/prediction-tracker\",
+            \"arn:aws:dynamodb:${AWS_REGION}:${ACCOUNT_ID}:table/prediction-tracker/index/*\",
+            \"arn:aws:dynamodb:${AWS_REGION}:${ACCOUNT_ID}:table/train-model-tracker\",
+            \"arn:aws:dynamodb:${AWS_REGION}:${ACCOUNT_ID}:table/train-model-tracker/index/*\"
+          ]
+        }
+      ]
+    }" >/dev/null
   echo "$arn"
 }
 
@@ -332,10 +344,12 @@ main() {
   # Build lambdas (preprocess and infer)
   build_zip "lambdas/preprocess" "$BUILD_ROOT/preprocess"
   build_zip "lambdas/infer" "$BUILD_ROOT/infer"
+  build_zip "lambdas/train_model_tracker" "$BUILD_ROOT/train_model_tracker"
 
   # Upsert functions
   upsert_lambda "$PREPROCESS_FN" "$BUILD_ROOT/preprocess/package.zip" "$ROLE_ARN"
   upsert_lambda "$INFER_FN"      "$BUILD_ROOT/infer/package.zip"      "$ROLE_ARN"
+  upsert_lambda "$TRAIN_TRACKER_FN" "$BUILD_ROOT/train_model_tracker/package.zip" "$ROLE_ARN"
 
   # Environment variables
   sleep 10
@@ -354,7 +368,7 @@ main() {
   SNS_TOPIC_ARN="$(ensure_sns_topic)"
   echo "SNS topic: $SNS_TOPIC_NAME ($SNS_TOPIC_ARN)"
 
-  echo "Deployment complete. Functions: $PREPROCESS_FN, $INFER_FN. State Machine: $STATE_MACHINE_NAME"
+  echo "Deployment complete. Functions: $PREPROCESS_FN, $INFER_FN, $TRAIN_TRACKER_FN. State Machine: $STATE_MACHINE_NAME"
 }
 
 main "$@"
