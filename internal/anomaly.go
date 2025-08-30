@@ -105,6 +105,7 @@ func ProcessInferAndDetect(ctx context.Context, stationID, parameter string, thr
 	if err != nil {
 		return nil, err
 	}
+
 	observed, err := parseLatestObserved(raw[0])
 	if err != nil {
 		return nil, err
@@ -157,14 +158,18 @@ func ProcessInferAndDetect(ctx context.Context, stationID, parameter string, thr
 		return nil, err
 	}
 
+	// Round observed and predicted to 2 decimal places for response consistency
+	obsRounded := math.Round(observed*100) / 100
+	predRounded := math.Round(predicted*100) / 100
+
 	den := math.Max(1e-9, math.Abs(observed))
 	percent := math.Abs(predicted-observed) / den * 100.0
 	anom := percent > thresholdPercent
 
 	return &AnomalyResult{
 		S3Key:          key,
-		ObservedValue:  observed,
-		PredictedValue: predicted,
+		ObservedValue:  obsRounded,
+		PredictedValue: predRounded,
 		PercentChange:  percent,
 		Anomalous:      anom,
 	}, nil

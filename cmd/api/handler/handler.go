@@ -42,8 +42,8 @@ type anomalyRequest struct {
 type anomalyItem struct {
 	Site            string  `json:"site"`
 	S3Key           string  `json:"s3_key"`
-	ObservedValue   float64 `json:"observed_value"`
-	PredictedValue  float64 `json:"predicted_value"`
+	ObservedValue   string  `json:"observed_value"`
+	PredictedValue  string  `json:"predicted_value"`
 	PercentChange   float64 `json:"percent_change"`
 	Anomalous       bool    `json:"anomalous"`
 	AnomalousReason string  `json:"anomalous_reason"`
@@ -327,7 +327,7 @@ func GenerateReportPDFHandler(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "failed to upload pdf"})
 		return
 	}
-	url, err := internal.GeneratePresignedGetURL(r.Context(), bucket, key, 5*time.Minute)
+	url, err := internal.GeneratePresignedGetURL(r.Context(), bucket, key, 120*time.Hour)
 	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]string{"s3_key": key})
 		return
@@ -401,8 +401,8 @@ func AnomalyCheckHandler(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing sites"})
 		return
 	}
-	if len(sites) > 10 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "too many sites (max 10)"})
+	if len(sites) > 20 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "too many sites (max 20)"})
 		return
 	}
 	threshold := req.Threshold
@@ -433,8 +433,8 @@ func AnomalyCheckHandler(w http.ResponseWriter, r *http.Request) {
 		items = append(items, anomalyItem{
 			Site:            site,
 			S3Key:           res.S3Key,
-			ObservedValue:   res.ObservedValue,
-			PredictedValue:  res.PredictedValue,
+			ObservedValue:   fmt.Sprintf("%.2f", res.ObservedValue),
+			PredictedValue:  fmt.Sprintf("%.2f", res.PredictedValue),
 			PercentChange:   res.PercentChange,
 			Anomalous:       res.Anomalous,
 			AnomalousReason: anomalousReason,
@@ -448,7 +448,8 @@ func AnomalyCheckHandler(w http.ResponseWriter, r *http.Request) {
 		for _, it := range items {
 			if it.Anomalous {
 				count++
-				fmt.Fprintf(&b, "Site %s anomalous: observed=%.2f predicted=%.2f (%.1f%%)\n", it.Site, it.ObservedValue, it.PredictedValue, it.PercentChange)
+				// it.ObservedValue and PredictedValue are strings with 2 decimals
+				fmt.Fprintf(&b, "Site %s anomalous: observed=%s predicted=%s (%.1f%%)\n", it.Site, it.ObservedValue, it.PredictedValue, it.PercentChange)
 			}
 		}
 		if count > 0 {
